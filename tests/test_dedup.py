@@ -138,3 +138,26 @@ def test_dry_run_not_recorded_as_applied(conn):
     mark_result("https://a", "dry_run", "dry run")
     row = conn.execute("SELECT apply_status, applied_at FROM jobs WHERE url='https://a'").fetchone()
     assert row["apply_status"] == "dry_run" and row["applied_at"] is None
+
+
+def test_scorer_parses_missing():
+    from applypilot.scoring.scorer import _parse_score_response
+    r = _parse_score_response("SCORE: 7\nKEYWORDS: NestJS\nMISSING: Kubernetes, Terraform\nREASONING: ok")
+    assert r["missing"] == "Kubernetes, Terraform" and r["score"] == 7
+    assert _parse_score_response("SCORE: 9\nMISSING: none\nREASONING: x")["missing"] == ""
+
+
+def test_gaps_aggregate(conn):
+    from applypilot import gaps
+    rows = [("https://1", "k8s, Terraform", 7), ("https://2", "Kubernetes, Go", 8),
+            ("https://3", "Kubernetes", 2), ("https://4", "Golang", 6)]
+    for url, miss, score in rows:
+        _add(conn, url, "Acme", f"Eng {url}", "x")
+        conn.execute("UPDATE jobs SET missing_skills=?, fit_score=? WHERE url=?", (miss, score, url))
+    conn.commit()
+    g = {r["key"]: r for r in gaps.compute_gaps(min_score=4, conn=conn)}
+    assert g["kubernetes"]["jobs"] == 2       # k8s + Kubernetes; the score-2 job is excluded
+    assert g["go"]["jobs"] == 2               # Go + Golang
+    gaps.set_status("K8s", "posted", "https://youtu.be/x")
+    g = {r["key"]: r for r in gaps.compute_gaps(min_score=4, conn=conn)}
+    assert g["kubernetes"]["status"] == "posted"

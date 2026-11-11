@@ -71,3 +71,14 @@ def test_exclude_titles():
 def test_matches_query_needs_all_words():
     assert rb.matches_query({"title": "Site Reliability Engineer", "tags": []}, ["site reliability engineer"])
     assert not rb.matches_query({"title": "Site Manager", "tags": []}, ["site reliability engineer"])
+
+
+def test_region_filter():
+    allowed = ["africa", "emea", "uganda"]
+    assert rb.region_ok("Remote", allowed)
+    assert rb.region_ok("Remote (Worldwide)", allowed)
+    assert rb.region_ok("Remote (EMEA)", allowed)
+    assert rb.region_ok("Remote (Anywhere in the World)", allowed)
+    assert not rb.region_ok("Remote (United States)", allowed)
+    assert not rb.region_ok("Remote (USA, Canada)", allowed)
+    assert rb.region_ok("Remote (United States)", [])  # no filter configured

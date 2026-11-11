@@ -11,6 +11,9 @@ LLM_MODEL env var overrides the model name for any provider.
 
 import logging
 import os
+import shutil
+import subprocess
+import tempfile
 import time
 
 import httpx
@@ -284,12 +287,75 @@ class _GeminiCompatForbidden(Exception):
 # Singleton
 # ---------------------------------------------------------------------------
 
-_instance: LLMClient | None = None
+_instance: "LLMClient | ClaudeCLIClient | None" = None
+
+
+class ClaudeCLIClient:
+    """Runs prompts through the local Claude Code CLI (`claude -p`).
+
+    Uses whatever Claude Code is logged in with (subscription or API key), so
+    no separate LLM key is needed. Tools, MCP servers and settings are all
+    switched off: it behaves as a plain text model.
+    Select with LLM_PROVIDER=claude-cli, or it is picked automatically when
+    no other provider is configured and `claude` is on PATH.
+    """
+
+    def __init__(self, model: str = "sonnet") -> None:
+        self.model = model
+        self._tmp = tempfile.mkdtemp(prefix="applypilot-llm-")
+
+    def chat(self, messages: list[dict], temperature: float = 0.0, max_tokens: int = 4096) -> str:
+        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+        convo = [m for m in messages if m["role"] != "system"]
+        if len(convo) == 1:
+            prompt = convo[0]["content"]
+        else:
+            prompt = "\n\n".join(f"[{m['role'].upper()}]\n{m['content']}" for m in convo)
+        cmd = [
+            shutil.which("claude") or "claude", "-p",
+            "--model", self.model,
+            "--tools", "",
+            "--strict-mcp-config",
+            "--setting-sources", "",
+            "--no-session-persistence",
+            "--output-format", "text",
+        ]
+        if system:
+            cmd += ["--system-prompt", system]
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+        last_err = ""
+        for attempt in range(3):
+            proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                                  timeout=300, cwd=self._tmp, env=env)
+            out = proc.stdout.strip()
+            if proc.returncode == 0 and out:
+                return out
+            last_err = (proc.stderr or proc.stdout or "").strip()[:300]
+            log.warning("claude -p failed (attempt %d/3): %s", attempt + 1, last_err)
+            time.sleep(5 * (attempt + 1))
+        raise RuntimeError(f"claude CLI failed: {last_err}")
+
+    def ask(self, prompt: str, **kwargs) -> str:
+        return self.chat([{"role": "user", "content": prompt}], **kwargs)
+
+    def close(self) -> None:
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+
+def _use_claude_cli() -> bool:
+    if os.environ.get("LLM_PROVIDER", "").lower() in ("claude-cli", "claude"):
+        return True
+    has_other = any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL"))
+    return not has_other and shutil.which("claude") is not None
 
 
 def get_client() -> LLMClient:
     """Return (or create) the module-level LLMClient singleton."""
     global _instance
+    if _instance is None and _use_claude_cli():
+        model = os.environ.get("LLM_MODEL") or "sonnet"
+        log.info("LLM provider: Claude Code CLI  model: %s", model)
+        _instance = ClaudeCLIClient(model)
     if _instance is None:
         base_url, model, api_key = _detect_provider()
         log.info("LLM provider: %s  model: %s", base_url, model)

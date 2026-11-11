@@ -206,7 +206,8 @@ def get_tier() -> int:
     """
     load_env()
 
-    has_llm = any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL"))
+    has_llm = any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")) \
+        or shutil.which("claude") is not None  # Claude Code CLI works as the LLM (llm.ClaudeCLIClient)
     if not has_llm:
         return 1
 

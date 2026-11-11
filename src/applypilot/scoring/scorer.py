@@ -34,10 +34,17 @@ IMPORTANT FACTORS:
 - Consider transferable experience (automation, scripting, API work)
 - Factor in the candidate's project experience
 - Be realistic about experience level vs. job requirements (years of experience, seniority)
+- LOCATION ELIGIBILITY (overrides everything above): if a CANDIDATE LOCATION is given and the job
+  requires living in, or holding work authorization for, a country or region the candidate is not in
+  (e.g. "US only", "must reside in the EU", "UK right to work", onsite in another city) and the candidate
+  cannot meet it, score 1-2 no matter how good the skills match. Say so in REASONING.
+  "Remote" with no restriction, "worldwide", "anywhere", or a region that includes the candidate is fine.
+  If the candidate is open to relocating and the company offers relocation/visa sponsorship, it is fine.
 
 RESPOND IN EXACTLY THIS FORMAT (no other text):
 SCORE: [1-10]
 KEYWORDS: [comma-separated ATS keywords from the job description that match or could match the candidate]
+MISSING: [comma-separated skills, tools, certifications or experience the job asks for that the resume does not show. Short canonical names like "Kubernetes", "Terraform", "Go", "AWS certification", "on-call experience". Write "none" if nothing is missing]
 REASONING: [2-3 sentences explaining the score]"""
 
 
@@ -52,6 +59,7 @@ def _parse_score_response(response: str) -> dict:
     """
     score = 0
     keywords = ""
+    missing = ""
     reasoning = response
 
     for line in response.split("\n"):
@@ -64,10 +72,34 @@ def _parse_score_response(response: str) -> dict:
                 score = 0
         elif line.startswith("KEYWORDS:"):
             keywords = line.replace("KEYWORDS:", "").strip()
+        elif line.startswith("MISSING:"):
+            missing = line.replace("MISSING:", "").strip()
+            if missing.lower() in ("none", "n/a", "-"):
+                missing = ""
         elif line.startswith("REASONING:"):
             reasoning = line.replace("REASONING:", "").strip()
 
-    return {"score": score, "keywords": keywords, "reasoning": reasoning}
+    return {"score": score, "keywords": keywords, "missing": missing, "reasoning": reasoning}
+
+
+def _candidate_location() -> str:
+    """One-line location/eligibility summary from profile.json, for the scorer."""
+    try:
+        p = load_profile()
+    except Exception:
+        return ""
+    pers, auth = p.get("personal", {}), p.get("work_authorization", {})
+    where = ", ".join(x for x in (pers.get("city"), pers.get("country")) if x)
+    if not where:
+        return ""
+    extra = []
+    if auth.get("work_permit_type"):
+        extra.append(f"work authorization: {auth['work_permit_type']}")
+    if auth.get("require_sponsorship"):
+        extra.append(f"needs visa sponsorship to work abroad: {auth['require_sponsorship']}")
+    if p.get("availability", {}).get("open_to_relocation"):
+        extra.append(f"open to relocation: {p['availability']['open_to_relocation']}")
+    return f"CANDIDATE LOCATION: {where}" + (f" ({'; '.join(extra)})" if extra else "") + "\n\n"
 
 
 def score_job(resume_text: str, job: dict) -> dict:
@@ -82,14 +114,15 @@ def score_job(resume_text: str, job: dict) -> dict:
     """
     job_text = (
         f"TITLE: {job['title']}\n"
-        f"COMPANY: {job['site']}\n"
+        f"COMPANY: {job.get('company') or job['site']}\n"
+        f"SOURCE: {job['site']}\n"
         f"LOCATION: {job.get('location', 'N/A')}\n\n"
         f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
     )
 
     messages = [
         {"role": "system", "content": SCORE_PROMPT},
-        {"role": "user", "content": f"RESUME:\n{resume_text}\n\n---\n\nJOB POSTING:\n{job_text}"},
+        {"role": "user", "content": f"{_candidate_location()}RESUME:\n{resume_text}\n\n---\n\nJOB POSTING:\n{job_text}"},
     ]
 
     try:
@@ -98,7 +131,7 @@ def score_job(resume_text: str, job: dict) -> dict:
         return _parse_score_response(response)
     except Exception as e:
         log.error("LLM error scoring job '%s': %s", job.get("title", "?"), e)
-        return {"score": 0, "keywords": "", "reasoning": f"LLM error: {e}"}
+        return {"score": 0, "keywords": "", "missing": "", "reasoning": f"LLM error: {e}"}
 
 
 def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
@@ -156,8 +189,8 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     for r in results:
         conn.execute(
-            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ? WHERE url = ?",
-            (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, r["url"]),
+            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, missing_skills = ?, scored_at = ? WHERE url = ?",
+            (r["score"], f"{r['keywords']}\n{r['reasoning']}", r.get("missing") or None, now, r["url"]),
         )
     conn.commit()
 

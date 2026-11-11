@@ -306,6 +306,35 @@ def history(
 
 
 @app.command()
+def gaps(
+    min_score: int = typer.Option(4, "--min-score", help="Only count jobs scored at least this high."),
+    top: int = typer.Option(25, "--top", "-n", help="Rows to print."),
+    set_skill: Optional[str] = typer.Option(None, "--set", help="Skill to update, e.g. Kubernetes."),
+    new_status: Optional[str] = typer.Option(None, "--status", help="todo | learning | posted | skip"),
+    note: Optional[str] = typer.Option(None, "--note", help="Free text, e.g. a video link."),
+) -> None:
+    """Skills the jobs ask for that your resume doesn't show, ranked. Writes skill_gaps.md."""
+    _bootstrap()
+    from rich.table import Table
+    from applypilot import gaps as gaps_mod
+
+    if set_skill:
+        key = gaps_mod.set_status(set_skill, new_status or "learning", note)
+        console.print(f"[green]{key}[/green] -> {new_status or 'learning'}")
+
+    rows = gaps_mod.compute_gaps(min_score=min_score)
+    path = gaps_mod.write_markdown(rows, min_score)
+    table = Table(title=f"Skill gaps (jobs with fit >= {min_score})")
+    for col in ("#", "Skill", "Jobs", "Share", "Avg fit", "Status", "Note"):
+        table.add_column(col)
+    for i, g in enumerate([r for r in rows if r["status"] != "skip"][:top], 1):
+        table.add_row(str(i), g["skill"], str(g["jobs"]), f"{g['share']:.0%}", f"{g['avg_fit']:.1f}",
+                      g["status"], g["note"][:40])
+    console.print(table)
+    console.print(f"Full list: {path}")
+
+
+@app.command()
 def status() -> None:
     """Show pipeline statistics from the database."""
     _bootstrap()

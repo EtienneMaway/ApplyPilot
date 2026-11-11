@@ -16,6 +16,11 @@ Config (searches.yaml), all optional:
       enabled: true
       boards: [remoteok, remotive, himalayas, jobicy, workingnomads, weworkremotely]
       max_age_hours: 72          # falls back to defaults.hours_old
+      allowed_regions:           # drop jobs restricted to regions not in this list
+        - worldwide              # (jobs with no stated restriction are kept)
+        - anywhere
+        - africa
+        - emea
       wwr_categories:            # We Work Remotely RSS categories
         - remote-devops-sysadmin-jobs
         - remote-back-end-programming-jobs
@@ -267,8 +272,23 @@ BOARDS: dict[str, tuple[str, Callable[[httpx.Client, list[str], dict], list[dict
 
 # -- filtering + entry point -------------------------------------------------
 
+_OPEN_REGION = ("anywhere", "worldwide", "global", "world", "international")
+
+
+def region_ok(location: str | None, allowed: list[str]) -> bool:
+    """Keep a remote job unless it names a restriction outside `allowed`."""
+    if not allowed or not location:
+        return True
+    m = re.search(r"\((.*)\)", location)
+    restriction = (m.group(1) if m else location.replace("Remote", "")).strip().lower()
+    if not restriction:
+        return True
+    return any(tok.lower() in restriction for tok in (*allowed, *_OPEN_REGION))
+
+
 def filter_jobs(jobs: Iterable[dict], queries: list[str], max_age_hours: int | None,
-                exclude_titles: list[str], now: datetime | None = None) -> list[dict]:
+                exclude_titles: list[str], now: datetime | None = None,
+                allowed_regions: list[str] | None = None) -> list[dict]:
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(hours=max_age_hours) if max_age_hours else None
     kept = []
@@ -280,6 +300,8 @@ def filter_jobs(jobs: Iterable[dict], queries: list[str], max_age_hours: int | N
         if _excluded(j["title"], exclude_titles):
             continue
         if not matches_query(j, queries):
+            continue
+        if not region_ok(j.get("location"), allowed_regions or []):
             continue
         kept.append(j)
     return kept
@@ -310,7 +332,8 @@ def run_remote_boards(boards: list[str] | None = None) -> dict:
             label, fetch = BOARDS[key]
             try:
                 raw = fetch(client, queries, rb_cfg)
-                kept = filter_jobs(raw, queries, max_age, exclude)
+                kept = filter_jobs(raw, queries, max_age, exclude,
+                                   allowed_regions=rb_cfg.get("allowed_regions"))
                 new, existing = store_jobs(conn, kept, site=label, strategy="board_api")
                 stats[key] = {"fetched": len(raw), "matched": len(kept), "new": new, "existing": existing}
                 log.info("%s: fetched %d, matched %d, new %d", label, len(raw), len(kept), new)

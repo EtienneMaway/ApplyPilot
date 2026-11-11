@@ -191,6 +191,8 @@ _ALL_COLUMNS: dict[str, str] = {
     "company": "TEXT",
     "dedup_key": "TEXT",
     "apply_key": "TEXT",
+    # Skill gaps the scorer found (comma separated)
+    "missing_skills": "TEXT",
 }
 
 
