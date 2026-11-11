@@ -195,6 +195,12 @@ _ALL_COLUMNS: dict[str, str] = {
     "apply_key": "TEXT",
     # Skill gaps the scorer found (comma separated)
     "missing_skills": "TEXT",
+    "company_country": "TEXT",
+    "requirements": "TEXT",
+    # What the apply agent said when it finished or stopped
+    "apply_notes": "TEXT",
+    # Manual application kit (JSON): answers to paste, file paths
+    "manual_kit": "TEXT",
 }
 
 

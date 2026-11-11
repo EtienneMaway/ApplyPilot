@@ -255,6 +255,16 @@ def apply(
         workers=workers,
     )
 
+    # Refresh the board, sign-up list and kits for anything that needs a person
+    try:
+        from applypilot.board import generate_board
+        from applypilot.manual import build_kits, write_signup_md
+        build_kits()
+        write_signup_md()
+        console.print(f"Board updated: {generate_board()}")
+    except Exception as e:  # never fail an apply run over the report
+        console.print(f"[yellow]Board not updated: {e}[/yellow]")
+
 
 @app.command()
 def history(
@@ -357,6 +367,55 @@ def todo() -> None:
                       (r["apply_error"] or "").replace("_", " "), r["link"])
     console.print(table)
     console.print("After applying by hand: applypilot apply --mark-applied URL")
+
+
+@app.command()
+def board(no_open: bool = typer.Option(False, "--no-open", help="Write the page without opening it.")) -> None:
+    """Build the local job-hunt page (applied, needs you, sign up, skill gaps, content) and open it."""
+    _bootstrap()
+    from applypilot.board import generate_board
+    from applypilot.gaps import compute_gaps, write_markdown
+    from applypilot.manual import write_signup_md
+    write_signup_md()
+    write_markdown(compute_gaps(min_score=4), 4)
+    path = generate_board(open_browser=not no_open)
+    console.print(f"[green]Board:[/green] {path}")
+
+
+@app.command()
+def kits(rebuild: bool = typer.Option(False, "--rebuild", help="Rebuild kits that already exist.")) -> None:
+    """Build copy-paste kits (resume, cover letter, answers) for jobs you'll apply to by hand."""
+    _bootstrap()
+    from applypilot.manual import build_kits
+    n = build_kits(rebuild=rebuild)
+    console.print(f"[green]{n} kit(s) built.[/green] Open them with: applypilot board")
+
+
+@app.command()
+def signups(retry: bool = typer.Option(False, "--retry", help="After signing up: retry those jobs with your logged-in Chrome.")) -> None:
+    """Sites that need an account before the bot can apply. Writes sign_up.md."""
+    _bootstrap()
+    from applypilot.manual import retry_signup_jobs, signup_sites, write_signup_md
+    if retry:
+        n = retry_signup_jobs()
+        console.print(f"[green]{n} job(s) back in the queue.[/green] Chrome profile will be re-copied on the next apply.")
+        return
+    sites = signup_sites()
+    path = write_signup_md(sites)
+    for s in sites:
+        console.print(f"  {s['domain']}: {len(s['jobs'])} job(s), best fit {s['best_fit']} -> {s['signup_url']}")
+    if not sites:
+        console.print("  Nothing waiting.")
+    console.print(f"List: {path}")
+
+
+@app.command()
+def content(min_score: int = typer.Option(4, "--min-score", help="Use jobs scored at least this high.")) -> None:
+    """Ideas for posts, videos and repos aimed at the companies you're applying to."""
+    _bootstrap()
+    from applypilot.content import generate_ideas
+    n = generate_ideas(min_score=min_score)
+    console.print(f"[green]{n} ideas saved.[/green] See them with: applypilot board")
 
 
 @app.command()

@@ -218,6 +218,20 @@ def mark_result(url: str, status: str, error: str | None = None,
     conn.commit()
 
 
+def _save_notes(url: str, output: str) -> None:
+    """Keep the agent's closing explanation (why it stopped, what the form asked)."""
+    # The final message is printed twice (assistant text + result event), each
+    # ending in a RESULT: line. Take the last non-empty chunk between them.
+    chunks = [c.strip() for c in re.split(r"\n?RESULT:[^\n]*", output) if c.strip()]
+    notes = (chunks[-1] if chunks else output.strip())[-2000:]
+    try:
+        conn = get_connection()
+        conn.execute("UPDATE jobs SET apply_notes = ? WHERE url = ?", (notes, url))
+        conn.commit()
+    except Exception as e:  # notes are nice to have; never break the apply loop
+        logger.warning("Could not save apply notes: %s", e)
+
+
 def release_lock(url: str) -> None:
     """Release the in_progress lock without changing status."""
     conn = get_connection()
@@ -477,6 +491,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         job_log = config.LOG_DIR / f"claude_{ts}_w{worker_id}_{job.get('site', 'unknown')[:20]}.txt"
         job_log.write_text(output, encoding="utf-8")
+        _save_notes(job["url"], output)
 
         if stats:
             cost = stats.get("cost_usd", 0)

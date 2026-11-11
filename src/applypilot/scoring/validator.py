@@ -332,6 +332,13 @@ def validate_cover_letter(text: str, mode: str = "normal") -> dict:
         warnings.append(f"Long ({words} words). Target 250.")
     # lenient: no word count check
 
+    # 3b. AI-writing tells (negation-reversal, hype, stock closers...) — error unless lenient
+    if mode != "lenient":
+        from applypilot.style import ai_tells
+        tells = ai_tells(text)
+        if tells:
+            errors.append(f"Sounds AI-written: {'; '.join(tells[:4])}")
+
     # 4. LLM self-talk — always an error regardless of mode
     found_leaks = [p for p in LLM_LEAK_PHRASES if p in text_lower]
     if found_leaks:

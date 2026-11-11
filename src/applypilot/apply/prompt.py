@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from applypilot import config
+from applypilot.style import HUMAN_STYLE
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,7 @@ Hard facts -> answer truthfully from the profile. No guessing. This includes:
 Skills and tools -> be confident. This candidate is a {target_role} with {years} years experience. If the question asks "Do you have experience with [tool]?" and it's in the same domain (DevOps, backend, ML, cloud, automation), answer YES. Software engineers learn tools fast. Don't sell short.
 
 Open-ended questions ("Why do you want this role?", "Tell us about yourself", "What interests you?") -> Write 2-3 sentences. Be specific to THIS job. Reference something from the job description. Connect it to a real achievement from the resume. No generic fluff. No "I am passionate about..." -- sound like a real person.
+{HUMAN_STYLE}
 
 EEO/demographics -> "Decline to self-identify" or "Prefer not to say" for everything."""
 

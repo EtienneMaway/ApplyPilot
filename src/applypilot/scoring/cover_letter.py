@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from applypilot.config import COVER_LETTER_DIR, RESUME_PATH, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
+from applypilot.style import HUMAN_STYLE
 from applypilot.scoring.validator import (
     BANNED_WORDS,
     LLM_LEAK_PHRASES,
@@ -73,7 +74,7 @@ PARAGRAPH 1 (2-3 sentences): Open with a specific thing YOU built that solves TH
 
 PARAGRAPH 2 (3-4 sentences): Pick 2 achievements from the resume that are MOST relevant to THIS job. Use numbers. Frame as solving their problem, not listing your accomplishments.{projects_hint}{metrics_hint}
 
-PARAGRAPH 3 (1-2 sentences): One specific thing about the company from the job description (a product, a technical challenge, a team structure). Then close. "Happy to walk through any of this in more detail." or "Let's discuss." Nothing else.
+PARAGRAPH 3 (1-2 sentences): One specific thing about the company from the job description (a product, a technical challenge, a team structure) and how it connects to something the applicant did. No stock closing line. End there, then the name.
 
 BANNED WORDS AND PHRASES (automated validator rejects ANY of these — do not use even once):
 {all_banned}
@@ -82,6 +83,8 @@ ALSO BANNED (meta-commentary the validator catches):
 {leak_banned}
 
 BANNED PUNCTUATION: No em dashes (—) or en dashes (–). Use commas or periods.
+
+{HUMAN_STYLE}
 
 VOICE:
 - Write like a real engineer emailing someone they respect. Not formal, not casual. Just direct.

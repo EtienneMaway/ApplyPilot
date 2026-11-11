@@ -45,7 +45,9 @@ RESPOND IN EXACTLY THIS FORMAT (no other text):
 SCORE: [1-10]
 KEYWORDS: [comma-separated ATS keywords from the job description that match or could match the candidate]
 MISSING: [comma-separated skills, tools, certifications or experience the job asks for that the resume does not show. Short canonical names like "Kubernetes", "Terraform", "Go", "AWS certification", "on-call experience". Write "none" if nothing is missing]
-REASONING: [2-3 sentences explaining the score]"""
+COUNTRY: [where the company is based, then where the hire may live, e.g. "UK; remote EMEA" or "USA; US only". Use "unknown" if the posting doesn't say]
+REQUIREMENTS: [the 4-6 main things the job asks for, semicolon separated, short, e.g. "4+ yrs Node.js; PostgreSQL; AWS; owns services end to end"]
+REASONING: [2-3 sentences explaining the score, plain words]"""
 
 
 def _parse_score_response(response: str) -> dict:
@@ -60,6 +62,8 @@ def _parse_score_response(response: str) -> dict:
     score = 0
     keywords = ""
     missing = ""
+    country = ""
+    requirements = ""
     reasoning = response
 
     for line in response.split("\n"):
@@ -76,10 +80,15 @@ def _parse_score_response(response: str) -> dict:
             missing = line.replace("MISSING:", "").strip()
             if missing.lower() in ("none", "n/a", "-"):
                 missing = ""
+        elif line.startswith("COUNTRY:"):
+            country = line.replace("COUNTRY:", "").strip()
+        elif line.startswith("REQUIREMENTS:"):
+            requirements = line.replace("REQUIREMENTS:", "").strip()
         elif line.startswith("REASONING:"):
             reasoning = line.replace("REASONING:", "").strip()
 
-    return {"score": score, "keywords": keywords, "missing": missing, "reasoning": reasoning}
+    return {"score": score, "keywords": keywords, "missing": missing,
+            "country": country, "requirements": requirements, "reasoning": reasoning}
 
 
 def _candidate_location() -> str:
@@ -189,8 +198,10 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     for r in results:
         conn.execute(
-            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, missing_skills = ?, scored_at = ? WHERE url = ?",
-            (r["score"], f"{r['keywords']}\n{r['reasoning']}", r.get("missing") or None, now, r["url"]),
+            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, missing_skills = ?, company_country = ?, "
+            "requirements = ?, scored_at = ? WHERE url = ?",
+            (r["score"], f"{r['keywords']}\n{r['reasoning']}", r.get("missing") or None,
+             r.get("country") or None, r.get("requirements") or None, now, r["url"]),
         )
     conn.commit()
 

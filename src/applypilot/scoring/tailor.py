@@ -19,6 +19,7 @@ from pathlib import Path
 from applypilot.config import RESUME_PATH, TAILORED_DIR, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
+from applypilot.style import HUMAN_STYLE
 from applypilot.scoring.validator import (
     BANNED_WORDS,
     FABRICATION_WATCHLIST,
@@ -98,6 +99,7 @@ PROJECTS: Reorder by relevance. Drop irrelevant projects entirely.
 BULLETS: Strong verb + what you built + quantified impact. Vary verbs (Built, Designed, Implemented, Reduced, Automated, Deployed, Operated, Optimized). Most relevant first. Max 4 per section.
 
 ## VOICE:
+{HUMAN_STYLE}
 - Write like a real engineer. Short, direct.
 - GOOD: "Automated financial reporting with Python + API integrations, cut processing time from 10 hours to 2"
 - BAD: "Leveraged cutting-edge AI technologies to drive transformative operational efficiencies"

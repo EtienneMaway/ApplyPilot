@@ -8,6 +8,14 @@
 > - **Remote boards through their own feeds:** Remote OK, Remotive, Himalayas, Jobicy, Working Nomads and We Work Remotely (`discovery/remote_boards.py`). No browser or LLM calls, and the company name comes back as a field. Runs first in `applypilot run discover`. Configure with a `remote_boards:` block in `searches.yaml` (see the module docstring).
 > - **Dry runs no longer count as applications.** Upstream marked `--dry-run` jobs as applied, which blocked them for good. They are now `dry_run` and `applypilot apply --reset-failed` clears them.
 > - **`applypilot history`** lists everything applied to, with `--days N` and `--csv file.csv`.
+> - **Claude Code as the LLM.** With no API key set, scoring, tailoring and cover letters run through `claude -p` on your Claude Code login.
+> - **Location-aware.** The scorer and the apply agent know where you live. "Remote, US only" is skipped for someone in Uganda; EMEA, Africa and worldwide pass. LinkedIn: the agent follows "apply on company site" and never uses Easy Apply.
+> - **Writing that doesn't read as AI.** `style.py` holds the rules every prompt gets (no negation-reversals, hype words, stock openers and closers, em dashes) and a checker that sends drafts back for a rewrite.
+> - **`applypilot board`** builds a local page (`~/.applypilot/board.html`): jobs applied to with company, country, requirements and gaps; jobs that need you, each with a copy-paste kit; sites to sign up for; skill gaps; content ideas.
+> - **`applypilot kits`** builds the copy-paste kits: tailored resume, cover letter, form answers, and the questions only you can answer.
+> - **`applypilot signups`** lists sites that wanted an account (`sign_up.md`). Sign up in Chrome, then `applypilot signups --retry`.
+> - **`applypilot gaps`** ranks skills the jobs ask for that your resume lacks (`skill_gaps.md`). **`applypilot content`** turns them into post, video and repo ideas aimed at those companies.
+> - **`applypilot todo`** prints the jobs waiting on you.
 > - JobSpy also needs `curl_cffi` at runtime: `pip install curl_cffi`.
 >
 > Tests: `pytest` (dedup, dry-run handling, board parsers).
