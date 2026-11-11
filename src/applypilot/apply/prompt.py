@@ -109,9 +109,16 @@ def _build_location_check(profile: dict, search_config: dict) -> str:
     else:
         city_list = primary_city
 
+    country = personal.get("country", "")
+    remote_rule = ""
+    if country:
+        remote_rule = f"""
+- The applicant lives in {country}. "Remote" restricted to specific countries/regions that do not include {country} (e.g. "Remote - US only", "must reside in the EU", "UK right to work required") -> NOT ELIGIBLE unless the posting offers visa sponsorship/relocation or hiring through an EOR/contractor in any country. Output RESULT:FAILED:not_eligible_location
+- Regions that include {country} (worldwide, anywhere, global, EMEA, Africa, or {country} itself) -> ELIGIBLE."""
+
     return f"""== LOCATION CHECK (do this FIRST before any form) ==
 Read the job page. Determine the work arrangement. Then decide:
-- "Remote" or "work from anywhere" -> ELIGIBLE. Apply.
+- "Remote" or "work from anywhere" -> ELIGIBLE, subject to the country rule below. Apply.{remote_rule}
 - "Hybrid" or "onsite" in {city_list} -> ELIGIBLE. Apply.
 - "Hybrid" or "onsite" in another city BUT the posting also says "remote OK" or "remote option available" -> ELIGIBLE. Apply.
 - "Onsite only" or "hybrid only" in any city outside the list above with NO remote option -> NOT ELIGIBLE. Stop immediately. Output RESULT:FAILED:not_eligible_location
