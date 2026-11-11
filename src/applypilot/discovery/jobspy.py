@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from jobspy import scrape_jobs
 
 from applypilot import config
-from applypilot.database import get_connection, init_db, store_jobs
+from applypilot.database import get_connection, init_db, make_apply_key, make_dedup_key, store_jobs
 
 log = logging.getLogger(__name__)
 
@@ -169,10 +169,11 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
-                "full_description, application_url, detail_scraped_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "full_description, application_url, detail_scraped_at, company, dedup_key, apply_key) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, title, salary, description, location_str, site_label, strategy, now,
-                 full_description, apply_url, detail_scraped_at),
+                 full_description, apply_url, detail_scraped_at, company,
+                 make_dedup_key(company, title), make_apply_key(apply_url) or make_apply_key(url)),
             )
             new += 1
         except sqlite3.IntegrityError:

@@ -5,10 +5,13 @@ pipeline stage are created up front so any stage can run independently
 without migration ordering issues.
 """
 
+import re
 import sqlite3
 import threading
-from datetime import datetime, timezone
+import unicodedata
+from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import parse_qsl, urlsplit
 
 from applypilot.config import DB_PATH
 
@@ -136,6 +139,10 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
 
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_dedup_key ON jobs(dedup_key)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_apply_key ON jobs(apply_key)")
+    conn.commit()
+    backfill_dedup_keys(conn)
 
     return conn
 
@@ -180,6 +187,10 @@ _ALL_COLUMNS: dict[str, str] = {
     "apply_duration_ms": "INTEGER",
     "apply_task_id": "TEXT",
     "verification_confidence": "TEXT",
+    # Cross-board dedup (job-hunter fork)
+    "company": "TEXT",
+    "dedup_key": "TEXT",
+    "apply_key": "TEXT",
 }
 
 
@@ -326,20 +337,153 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
     return stats
 
 
+# ---------------------------------------------------------------------------
+# Cross-board dedup
+#
+# The upstream project only skipped a job when the exact URL had been seen.
+# The same posting on Indeed, LinkedIn and the company site has three URLs,
+# so it could be applied to three times. Two keys catch that:
+#   dedup_key  normalized "company|title"
+#   apply_key  the application URL without query string, fragment or tracking
+# A job is a duplicate if either key matches a job already applied to
+# (or currently being applied to).
+# ---------------------------------------------------------------------------
+
+_COMPANY_SUFFIXES = re.compile(
+    r"\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|gmbh|plc|sa|bv|ag|pty)\b\.?",
+)
+_TITLE_NOISE = re.compile(
+    r"\((?:[^)]*remote[^)]*|[^)]*hybrid[^)]*|[^)]*contract[^)]*|[^)]*full[- ]time[^)]*)\)"
+    r"|\b(remote|hybrid|anywhere|worldwide|full[- ]time|part[- ]time|contract)\b",
+)
+_TITLE_ALIASES = {
+    "sr": "senior", "jr": "junior", "eng": "engineer", "dev": "developer",
+    "mgr": "manager", "swe": "software engineer", "sre": "site reliability engineer",
+}
+
+
+def _norm_text(value: str | None) -> str:
+    if not value:
+        return ""
+    v = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+    v = re.sub(r"[^a-z0-9]+", " ", v)
+    return re.sub(r"\s+", " ", v).strip()
+
+
+def normalize_company(company: str | None) -> str:
+    c = _norm_text(company)
+    c = _COMPANY_SUFFIXES.sub(" ", c)
+    return re.sub(r"\s+", " ", c).strip()
+
+
+def normalize_title(title: str | None) -> str:
+    t = (title or "").lower()
+    t = _TITLE_NOISE.sub(" ", t)
+    t = re.split(r"\s[-|–—]\s", t)[0] if re.search(r"\s[-|–—]\s", t) else t
+    words = [_TITLE_ALIASES.get(w, w) for w in _norm_text(t).split()]
+    return " ".join(words)
+
+
+def make_dedup_key(company: str | None, title: str | None) -> str | None:
+    c, t = normalize_company(company), normalize_title(title)
+    if not c or not t:
+        return None
+    return f"{c}|{t}"
+
+
+_TRACKING_PARAMS = re.compile(r"^(utm_|ref|source|src|gh_src|lever-source|trk|refid|tracking)", re.IGNORECASE)
+
+
+def make_apply_key(url: str | None) -> str | None:
+    """Canonical form of an application URL, for matching the same posting."""
+    if not url or not url.startswith("http"):
+        return None
+    parts = urlsplit(url.strip())
+    host = parts.netloc.lower().removeprefix("www.")
+    path = parts.path.rstrip("/").lower()
+    # Aggregator redirect URLs (indeed viewjob?jk=...) carry identity in the query
+    keep = [(k, v) for k, v in parse_qsl(parts.query) if not _TRACKING_PARAMS.match(k)]
+    query = "&".join(f"{k}={v}" for k, v in sorted(keep)) if host.endswith(("indeed.com", "linkedin.com", "ziprecruiter.com")) else ""
+    return f"{host}{path}" + (f"?{query}" if query else "")
+
+
+def backfill_dedup_keys(conn: sqlite3.Connection | None = None) -> int:
+    """Fill dedup_key/apply_key for rows that don't have them yet."""
+    if conn is None:
+        conn = get_connection()
+    rows = conn.execute(
+        "SELECT url, title, company, site, strategy, application_url FROM jobs "
+        "WHERE dedup_key IS NULL OR apply_key IS NULL"
+    ).fetchall()
+    for r in rows:
+        company = r["company"]
+        # Workday rows store the employer name in `site`
+        if not company and r["strategy"] == "workday_api":
+            company = r["site"]
+        conn.execute(
+            "UPDATE jobs SET company = COALESCE(company, ?), dedup_key = ?, apply_key = ? WHERE url = ?",
+            (company, make_dedup_key(company, r["title"]),
+             make_apply_key(r["application_url"]) or make_apply_key(r["url"]), r["url"]),
+        )
+    if rows:
+        conn.commit()
+    return len(rows)
+
+
+def refresh_keys(conn: sqlite3.Connection, url: str) -> None:
+    """Recompute keys for one job (application_url may have been filled in by enrichment)."""
+    r = conn.execute(
+        "SELECT title, company, site, strategy, application_url FROM jobs WHERE url = ?", (url,)
+    ).fetchone()
+    if not r:
+        return
+    company = r["company"] or (r["site"] if r["strategy"] == "workday_api" else None)
+    conn.execute(
+        "UPDATE jobs SET dedup_key = ?, apply_key = ? WHERE url = ?",
+        (make_dedup_key(company, r["title"]),
+         make_apply_key(r["application_url"]) or make_apply_key(url), url),
+    )
+
+
+def find_applied_duplicate(conn: sqlite3.Connection, url: str) -> dict | None:
+    """Return a job already applied to (or in progress) that matches `url`'s posting."""
+    refresh_keys(conn, url)
+    row = conn.execute("SELECT dedup_key, apply_key FROM jobs WHERE url = ?", (url,)).fetchone()
+    if not row:
+        return None
+    clauses, params = [], []
+    if row["dedup_key"]:
+        clauses.append("dedup_key = ?")
+        params.append(row["dedup_key"])
+    if row["apply_key"]:
+        clauses.append("apply_key = ?")
+        params.append(row["apply_key"])
+    if not clauses:
+        return None
+    hit = conn.execute(
+        f"SELECT url, title, company, site, applied_at, apply_status FROM jobs "
+        f"WHERE url != ? AND ({' OR '.join(clauses)}) "
+        f"AND (applied_at IS NOT NULL OR apply_status IN ('applied', 'in_progress')) LIMIT 1",
+        [url, *params],
+    ).fetchone()
+    return dict(hit) if hit else None
+
+
 def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
                site: str, strategy: str) -> tuple[int, int]:
     """Store discovered jobs, skipping duplicates by URL.
 
     Args:
         conn: Database connection.
-        jobs: List of job dicts with keys: url, title, salary, description, location.
+        jobs: List of job dicts with keys: url, title, salary, description, location,
+              and optionally company, full_description, application_url.
         site: Source site name (e.g. "RemoteOK", "Dice").
         strategy: Extraction strategy used (e.g. "json_ld", "api_response", "css_selectors").
 
     Returns:
         Tuple of (new_count, duplicate_count).
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     new = 0
     existing = 0
 
@@ -349,10 +493,15 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             continue
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
+                "company, full_description, application_url, detail_scraped_at, dedup_key, apply_key) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now),
+                 job.get("location"), site, strategy, now,
+                 job.get("company"), job.get("full_description"), job.get("application_url"),
+                 now if job.get("full_description") else None,
+                 make_dedup_key(job.get("company"), job.get("title")),
+                 make_apply_key(job.get("application_url")) or make_apply_key(url)),
             )
             new += 1
         except sqlite3.IntegrityError:

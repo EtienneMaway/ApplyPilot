@@ -257,6 +257,55 @@ def apply(
 
 
 @app.command()
+def history(
+    days: int = typer.Option(0, "--days", "-d", help="Only show the last N days (0 = all)."),
+    csv_path: Optional[str] = typer.Option(None, "--csv", help="Also write the list to this CSV file."),
+    include: str = typer.Option("applied", "--include",
+                                help="Statuses to show, comma separated: applied,dry_run,duplicate,failed,manual"),
+) -> None:
+    """Show every job you've applied to, so you know what to expect replies from."""
+    _bootstrap()
+    import csv
+    from datetime import datetime, timedelta, timezone
+    from rich.table import Table
+    from applypilot.database import get_connection
+
+    statuses = [s.strip() for s in include.split(",") if s.strip()]
+    conn = get_connection()
+    status_clause = f"apply_status IN ({','.join('?' * len(statuses))})"
+    if "applied" in statuses:
+        status_clause = f"({status_clause} OR applied_at IS NOT NULL)"
+    where = [status_clause]
+    params: list = list(statuses)
+    if days:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        where.append("COALESCE(applied_at, last_attempted_at) >= ?")
+        params.append(cutoff)
+    rows = conn.execute(
+        "SELECT COALESCE(applied_at, last_attempted_at) AS at, apply_status, company, title, site, "
+        "fit_score, application_url, url, tailored_resume_path, cover_letter_path, apply_error "
+        f"FROM jobs WHERE {' AND '.join(where)} ORDER BY at DESC",
+        params,
+    ).fetchall()
+
+    table = Table(title=f"Application history ({len(rows)})", show_lines=False)
+    for col in ("Date", "Status", "Company", "Title", "Board", "Fit"):
+        table.add_column(col)
+    for r in rows:
+        table.add_row((r["at"] or "")[:10], r["apply_status"] or "", (r["company"] or "")[:28],
+                      (r["title"] or "")[:45], (r["site"] or "")[:16], str(r["fit_score"] or ""))
+    console.print(table)
+
+    if csv_path:
+        with open(csv_path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(rows[0].keys() if rows else ["at"])
+            for r in rows:
+                w.writerow(list(r))
+        console.print(f"[green]Wrote {len(rows)} rows to {csv_path}[/green]")
+
+
+@app.command()
 def status() -> None:
     """Show pipeline statistics from the database."""
     _bootstrap()

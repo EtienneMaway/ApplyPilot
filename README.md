@@ -1,5 +1,18 @@
 <!-- logo here -->
 
+> ## job-hunter fork
+>
+> Fork of [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot) (AGPL-3.0). Changes:
+>
+> - **No double applications across boards.** Upstream skipped a job only when the exact URL had been applied to. The same posting on Indeed, LinkedIn and the company site has three URLs. Jobs now carry `company`, a `dedup_key` (normalized company + title) and an `apply_key` (application URL minus tracking params). Before applying, the queue skips anything matching a job already applied to and marks it `duplicate`. Existing databases get the keys filled in on first start.
+> - **Remote boards through their own feeds:** Remote OK, Remotive, Himalayas, Jobicy, Working Nomads and We Work Remotely (`discovery/remote_boards.py`). No browser or LLM calls, and the company name comes back as a field. Runs first in `applypilot run discover`. Configure with a `remote_boards:` block in `searches.yaml` (see the module docstring).
+> - **Dry runs no longer count as applications.** Upstream marked `--dry-run` jobs as applied, which blocked them for good. They are now `dry_run` and `applypilot apply --reset-failed` clears them.
+> - **`applypilot history`** lists everything applied to, with `--days N` and `--csv file.csv`.
+> - JobSpy also needs `curl_cffi` at runtime: `pip install curl_cffi`.
+>
+> Tests: `pytest` (dedup, dry-run handling, board parsers).
+
+
 > **⚠️ ApplyPilot** is the original open-source project, created by [Pickle-Pixel](https://github.com/Pickle-Pixel) and first published on GitHub on **February 17, 2026**. We are **not affiliated** with applypilot.app, useapplypilot.com, or any other product using the "ApplyPilot" name. These sites are **not associated with this project** and may misrepresent what they offer. If you're looking for the autonomous, open-source job application agent — you're in the right place.
 
 # ApplyPilot

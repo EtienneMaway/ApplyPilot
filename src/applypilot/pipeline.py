@@ -35,7 +35,7 @@ console = Console()
 STAGE_ORDER = ("discover", "enrich", "score", "tailor", "cover", "pdf")
 
 STAGE_META: dict[str, dict] = {
-    "discover": {"desc": "Job discovery (JobSpy + Workday + smart extract)"},
+    "discover": {"desc": "Job discovery (remote boards + JobSpy + Workday + smart extract)"},
     "enrich":   {"desc": "Detail enrichment (full descriptions + apply URLs)"},
     "score":    {"desc": "LLM scoring (fit 1-10)"},
     "tailor":   {"desc": "Resume tailoring (LLM + validation)"},
@@ -61,7 +61,23 @@ _UPSTREAM: dict[str, str | None] = {
 
 def _run_discover(workers: int = 1) -> dict:
     """Stage: Job discovery — JobSpy, Workday, and smart-extract scrapers."""
-    stats: dict = {"jobspy": None, "workday": None, "smartextract": None}
+    stats: dict = {"remote_boards": None, "jobspy": None, "workday": None, "smartextract": None}
+
+    # Remote boards via public APIs/RSS (no browser, no LLM)
+    console.print("  [cyan]Remote boards (Remote OK, Remotive, Himalayas, Jobicy, Working Nomads, WWR)...[/cyan]")
+    try:
+        from applypilot.discovery.remote_boards import run_remote_boards
+        rb = run_remote_boards()
+        for name, st in rb.items():
+            if "error" in st:
+                console.print(f"    [red]{name}:[/red] {st['error']}")
+            else:
+                console.print(f"    {name}: {st['matched']} matched, {st['new']} new")
+        stats["remote_boards"] = "ok"
+    except Exception as e:
+        log.error("Remote boards failed: %s", e)
+        console.print(f"  [red]Remote boards error:[/red] {e}")
+        stats["remote_boards"] = f"error: {e}"
 
     # JobSpy
     console.print("  [cyan]JobSpy full crawl...[/cyan]")

@@ -24,7 +24,7 @@ from rich.console import Console
 from rich.live import Live
 
 from applypilot import config
-from applypilot.database import get_connection
+from applypilot.database import find_applied_duplicate, get_connection
 from applypilot.apply import chrome, dashboard, prompt as prompt_mod
 from applypilot.apply.chrome import (
     launch_chrome, cleanup_worker, kill_all_chrome,
@@ -127,23 +127,45 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
             if blocked_patterns:
                 url_clauses = " ".join(f"AND url NOT LIKE ?" for _ in blocked_patterns)
                 params.extend(blocked_patterns)
-            row = conn.execute(f"""
-                SELECT url, title, site, application_url, tailored_resume_path,
-                       fit_score, location, full_description, cover_letter_path
-                FROM jobs
-                WHERE tailored_resume_path IS NOT NULL
-                  AND (apply_status IS NULL OR apply_status = 'failed')
-                  AND (apply_attempts IS NULL OR apply_attempts < ?)
-                  AND fit_score >= ?
-                  {site_clause}
-                  {url_clauses}
-                ORDER BY fit_score DESC, url
-                LIMIT 1
-            """, [config.DEFAULTS["max_apply_attempts"]] + params).fetchone()
+            # Walk the queue, skipping postings already applied to under another
+            # URL (same company+title, or same application page).
+            row = None
+            for _ in range(200):
+                cand = conn.execute(f"""
+                    SELECT url, title, site, application_url, tailored_resume_path,
+                           fit_score, location, full_description, cover_letter_path
+                    FROM jobs
+                    WHERE tailored_resume_path IS NOT NULL
+                      AND (apply_status IS NULL OR apply_status = 'failed')
+                      AND (apply_attempts IS NULL OR apply_attempts < ?)
+                      AND fit_score >= ?
+                      {site_clause}
+                      {url_clauses}
+                    ORDER BY fit_score DESC, discovered_at DESC, url
+                    LIMIT 1
+                """, [config.DEFAULTS["max_apply_attempts"]] + params).fetchone()
+                if not cand:
+                    break
+                dup = find_applied_duplicate(conn, cand["url"])
+                if not dup:
+                    row = cand
+                    break
+                conn.execute(
+                    "UPDATE jobs SET apply_status = 'duplicate', apply_error = ? WHERE url = ?",
+                    (f"already applied via {dup['url']}", cand["url"]),
+                )
+                logger.info("Skipping duplicate: %s (already applied via %s)", cand["url"][:80], dup["url"][:80])
 
         if not row:
-            conn.rollback()
+            conn.commit()  # keep any 'duplicate' marks made above
             return None
+
+        if target_url:
+            dup = find_applied_duplicate(conn, row["url"])
+            if dup:
+                conn.rollback()
+                logger.warning("Already applied to this posting via %s", dup["url"])
+                return None
 
         # Skip manual ATS sites (unsolvable CAPTCHAs)
         from applypilot.config import is_manual_ats
@@ -608,6 +630,14 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
                 release_lock(job["url"])
                 add_event(f"[W{worker_id}] Skipped: {job['title'][:30]}")
                 continue
+            elif result == "applied" and dry_run:
+                # Upstream recorded dry runs as real applications, which then
+                # blocked those jobs forever. Record them separately.
+                mark_result(job["url"], "dry_run", "dry run: form filled, not submitted",
+                            duration_ms=duration_ms)
+                applied += 1
+                update_state(worker_id, jobs_applied=applied,
+                             jobs_done=applied + failed)
             elif result == "applied":
                 mark_result(job["url"], "applied", duration_ms=duration_ms)
                 applied += 1
