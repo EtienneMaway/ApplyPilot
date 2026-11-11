@@ -335,6 +335,31 @@ def gaps(
 
 
 @app.command()
+def todo() -> None:
+    """Good-fit jobs the bot stopped on that need you: logins, personal questions, Easy Apply."""
+    _bootstrap()
+    from rich.table import Table
+    from applypilot.database import get_connection
+
+    skip = ("not_eligible_location", "not_eligible_salary", "expired", "already_applied", "not_a_job_application")
+    rows = get_connection().execute(
+        "SELECT fit_score, company, site, title, apply_error, COALESCE(application_url, url) AS link FROM jobs "
+        "WHERE apply_status IN ('failed', 'manual') AND applied_at IS NULL "
+        f"AND COALESCE(apply_error, '') NOT IN ({','.join('?' * len(skip))}) "
+        "ORDER BY fit_score DESC",
+        skip,
+    ).fetchall()
+    table = Table(title=f"Needs you ({len(rows)})", show_lines=True)
+    for col in ("Fit", "Company", "Title", "Why it stopped", "Link"):
+        table.add_column(col, overflow="fold")
+    for r in rows:
+        table.add_row(str(r["fit_score"]), r["company"] or r["site"], r["title"],
+                      (r["apply_error"] or "").replace("_", " "), r["link"])
+    console.print(table)
+    console.print("After applying by hand: applypilot apply --mark-applied URL")
+
+
+@app.command()
 def status() -> None:
     """Show pipeline statistics from the database."""
     _bootstrap()
