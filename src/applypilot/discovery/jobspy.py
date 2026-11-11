@@ -164,7 +164,9 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
             detail_scraped_at = now
 
         # Extract apply URL if JobSpy provided it
-        apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
+        # str(None) is "None": treat it like NaN, otherwise the apply step gets URL "None"
+        apply_url = str(row.get("job_url_direct") or "").strip()
+        apply_url = apply_url if apply_url.startswith("http") else None
 
         try:
             conn.execute(

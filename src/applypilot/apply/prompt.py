@@ -116,7 +116,14 @@ def _build_location_check(profile: dict, search_config: dict) -> str:
 - The applicant lives in {country}. "Remote" restricted to specific countries/regions that do not include {country} (e.g. "Remote - US only", "must reside in the EU", "UK right to work required") -> NOT ELIGIBLE unless the posting offers visa sponsorship/relocation or hiring through an EOR/contractor in any country. Output RESULT:FAILED:not_eligible_location
 - Regions that include {country} (worldwide, anywhere, global, EMEA, Africa, or {country} itself) -> ELIGIBLE."""
 
-    return f"""== LOCATION CHECK (do this FIRST before any form) ==
+    linkedin_rule = """
+== LINKEDIN ==
+If the URL is a linkedin.com job page: read it, then look for the button that applies on the company's own site
+("Apply" with an external-link icon). Follow it and apply there. NEVER use LinkedIn "Easy Apply", never message
+recruiters, never fill LinkedIn forms. If the only option is Easy Apply, stop and output RESULT:FAILED:linkedin_easy_apply
+"""
+
+    return linkedin_rule + f"""== LOCATION CHECK (do this FIRST before any form) ==
 Read the job page. Determine the work arrangement. Then decide:
 - "Remote" or "work from anywhere" -> ELIGIBLE, subject to the country rule below. Apply.{remote_rule}
 - "Hybrid" or "onsite" in {city_list} -> ELIGIBLE. Apply.
@@ -180,7 +187,7 @@ def _build_screening_section(profile: dict) -> str:
 
     return f"""== SCREENING QUESTIONS (be strategic) ==
 Hard facts -> answer truthfully from the profile. No guessing. This includes:
-  - Location/relocation: lives in {city}, cannot relocate
+  - Location/relocation: lives in {city}. Open to relocation: {profile.get('availability', {}).get('open_to_relocation', 'No')}
   - Work authorization: {work_auth.get('legally_authorized_to_work', 'see profile')}
   - Citizenship, clearance, licenses, certifications: answer from profile only
   - Criminal/background: answer from profile only
@@ -525,7 +532,8 @@ def build_prompt(job: dict, tailored_resume: str,
 == JOB ==
 URL: {job.get('application_url') or job['url']}
 Title: {job['title']}
-Company: {job.get('site', 'Unknown')}
+Company: {job.get('company') or job.get('site', 'Unknown')}
+Found on: {job.get('site', 'Unknown')}
 Fit Score: {job.get('fit_score', 'N/A')}/10
 
 == FILES ==

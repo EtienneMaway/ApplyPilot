@@ -139,6 +139,8 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
 
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
+    # Older JobSpy rows stored a missing apply URL as the string "None"/"nan"
+    conn.execute("UPDATE jobs SET application_url = NULL WHERE application_url IN ('None', 'nan', '')")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_dedup_key ON jobs(dedup_key)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_apply_key ON jobs(apply_key)")
     conn.commit()

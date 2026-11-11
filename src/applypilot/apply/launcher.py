@@ -106,12 +106,12 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
         if target_url:
             like = f"%{target_url.split('?')[0].rstrip('/')}%"
             row = conn.execute("""
-                SELECT url, title, site, application_url, tailored_resume_path,
+                SELECT url, title, site, company, application_url, tailored_resume_path,
                        fit_score, location, full_description, cover_letter_path
                 FROM jobs
                 WHERE (url = ? OR application_url = ? OR application_url LIKE ? OR url LIKE ?)
                   AND tailored_resume_path IS NOT NULL
-                  AND apply_status != 'in_progress'
+                  AND COALESCE(apply_status, '') != 'in_progress'
                 LIMIT 1
             """, (target_url, target_url, like, like)).fetchone()
         else:
@@ -132,7 +132,7 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
             row = None
             for _ in range(200):
                 cand = conn.execute(f"""
-                    SELECT url, title, site, application_url, tailored_resume_path,
+                    SELECT url, title, site, company, application_url, tailored_resume_path,
                            fit_score, location, full_description, cover_letter_path
                     FROM jobs
                     WHERE tailored_resume_path IS NOT NULL
@@ -306,7 +306,7 @@ def reset_failed() -> int:
                        apply_attempts = 0, agent_id = NULL
         WHERE apply_status = 'failed'
           OR (apply_status IS NOT NULL AND apply_status != 'applied'
-              AND apply_status != 'in_progress')
+              AND COALESCE(apply_status, '') != 'in_progress')
     """)
     conn.commit()
     return cursor.rowcount
@@ -548,6 +548,7 @@ PERMANENT_FAILURES: set[str] = {
     "not_a_job_application", "unsafe_permissions",
     "unsafe_verification", "sso_required",
     "site_blocked", "cloudflare_blocked", "blocked_by_cloudflare",
+    "linkedin_easy_apply", "no_job_url",
 }
 
 PERMANENT_PREFIXES: tuple[str, ...] = ("site_blocked", "cloudflare", "blocked_by")
