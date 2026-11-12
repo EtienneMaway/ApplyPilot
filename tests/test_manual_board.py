@@ -85,3 +85,12 @@ def test_board_renders(conn, tmp_path, monkeypatch):
     html = open(board.generate_board()).read()
     assert "__DATA__" not in html and "Backend Engineer" in html
     assert "Dear <\\/script>" in html  # embedded data can't close the script tag
+
+
+def test_parse_answer_log():
+    from applypilot.apply.launcher import parse_answer_log
+    out = ('filling...\nANSWERS_JSON: [{"q": "Kubernetes experience?", "a": "Learning it now", "stretch": true, '
+           '"prep": "Show the MicroK8s video"}, {"q": "Email", "a": "x@y.z", "stretch": false, "prep": ""}]\nRESULT:APPLIED')
+    a = parse_answer_log(out)
+    assert len(a) == 2 and a[0]["stretch"] is True
+    assert parse_answer_log("no log here\nRESULT:APPLIED") == []

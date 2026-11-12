@@ -23,7 +23,7 @@ def _collect() -> dict:
     conn = get_connection()
     cols = ("url, application_url, title, company, site, company_country, location, fit_score, requirements, "
             "missing_skills, apply_status, apply_error, applied_at, last_attempted_at, apply_notes, manual_kit, "
-            "salary, discovered_at")
+            "salary, discovered_at, submitted_answers")
     applied = [dict(r) for r in conn.execute(
         f"SELECT {cols} FROM jobs WHERE applied_at IS NOT NULL OR apply_status = 'applied' ORDER BY applied_at DESC")]
     scored = [dict(r) for r in conn.execute(
@@ -111,6 +111,9 @@ td a{color:var(--accent);text-decoration:none} td a:hover{text-decoration:underl
 .f-hi{color:var(--good)} .f-mid{color:var(--warn)} .f-lo{color:var(--muted)}
 .tags{display:flex;flex-wrap:wrap;gap:4px}
 .tag{font-size:11.5px;padding:2px 7px;border-radius:6px;background:var(--bg);border:1px solid var(--line)}
+.stretch{border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:6px;padding:6px 9px;margin:6px 0}
+.ans{padding:4px 0;border-bottom:1px solid var(--line);font-size:13px}
+.ans .q{color:var(--muted);font-size:12px}
 .tag.miss{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .pill{font-size:11px;padding:2px 8px;border-radius:9px;background:var(--bg);border:1px solid var(--line);white-space:nowrap}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
@@ -199,13 +202,21 @@ nav.addEventListener('click', e => { const b = e.target.closest('button'); if (b
 let start = 'applied'; try { start = localStorage.getItem('tab') || (D.applied.length ? 'applied' : 'needs'); } catch {}
 show(start);
 
+function prep(raw){
+  let a = []; try { a = JSON.parse(raw || '[]'); } catch {}
+  if (!a.length) return '<span class="sub">No answer log</span>';
+  const st = a.filter(x => x.stretch);
+  return `<details${st.length ? ' open' : ''}><summary>${a.length} answers, <b>${st.length} stretched</b></summary>` +
+    st.map(x => `<div class="stretch"><div class="sub">${esc(x.q)}</div><b>You said:</b> ${esc(x.a)}<br><b>Back it up:</b> ${esc(x.prep)}</div>`).join('') +
+    a.filter(x => !x.stretch).map(x => `<div class="ans"><div class="q">${esc(x.q)}</div>${esc(x.a)}</div>`).join('') + `</details>`;
+}
 function jobsTable(){
   const which = document.getElementById('which').value, q = document.getElementById('q').value.toLowerCase();
   const rows = (which === 'applied' ? D.applied : D.scored).filter(j =>
     !q || [j.company, j.site, j.title, j.company_country, j.location].join(' ').toLowerCase().includes(q));
   const el = document.getElementById('appliedTable');
   if (!rows.length) { el.innerHTML = `<div class="empty">${which === 'applied' ? 'Nothing submitted yet. Jobs show up here after a real (not dry-run) apply.' : 'No scored jobs match.'}</div>`; return; }
-  el.innerHTML = `<div class="tablewrap"><table><thead><tr><th>${which==='applied'?'Applied':'Found'}</th><th>Company</th><th>Country</th><th>Role</th><th>Fit</th><th>What they ask for</th><th>You're missing</th><th>Status</th></tr></thead><tbody>` +
+  el.innerHTML = `<div class="tablewrap"><table><thead><tr><th>${which==='applied'?'Applied':'Found'}</th><th>Company</th><th>Country</th><th>Role</th><th>Fit</th><th>What they ask for</th><th>You're missing</th><th>Interview prep</th><th>Status</th></tr></thead><tbody>` +
     rows.map(j => `<tr>
       <td class="mono">${esc((j.applied_at || j.discovered_at || '').slice(0,10))}</td>
       <td><b>${esc(j.company || j.site)}</b><div class="sub">via ${esc(j.site)}</div></td>
@@ -214,6 +225,7 @@ function jobsTable(){
       <td class="fit ${fitCls(j.fit_score)}">${j.fit_score ?? ''}</td>
       <td><div class="tags">${split(j.requirements, ';').map(r => `<span class="tag">${esc(r)}</span>`).join('')}</div></td>
       <td><div class="tags">${split(j.missing_skills, ',').slice(0,6).map(r => `<span class="tag miss">${esc(r)}</span>`).join('')}</div></td>
+      <td style="min-width:240px">${prep(j.submitted_answers)}</td>
       <td><span class="pill">${esc((j.apply_status || 'not tried').replace(/_/g,' '))}</span></td>
     </tr>`).join('') + `</tbody></table></div>`;
 }

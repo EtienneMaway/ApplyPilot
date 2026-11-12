@@ -201,6 +201,8 @@ _ALL_COLUMNS: dict[str, str] = {
     "apply_notes": "TEXT",
     # Manual application kit (JSON): answers to paste, file paths
     "manual_kit": "TEXT",
+    # What the agent typed into the form (JSON list of {q, a, stretch, prep})
+    "submitted_answers": "TEXT",
 }
 
 

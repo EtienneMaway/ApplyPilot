@@ -195,6 +195,18 @@ Hard facts -> answer truthfully from the profile. No guessing. This includes:
 
 Skills and tools -> be confident. This candidate is a {target_role} with {years} years experience. If the question asks "Do you have experience with [tool]?" and it's in the same domain (DevOps, backend, ML, cloud, automation), answer YES. Software engineers learn tools fast. Don't sell short.
 
+GOAL: get a reply and a call. Never talk the applicant out of a job they can grow into.
+  - Willingness questions (learn a new stack, on-call, travel, overlap hours, take a test, start soon) -> Yes.
+  - Free-text "describe your experience with X" where X is missing from the resume -> name the closest real
+    work (e.g. Docker, AWS and CI/CD in production for a Kubernetes question) and say they're learning X now in
+    their public "DevOps in 90 Days" series. Never write "I have no experience".
+  - Years with a specific tool -> count from the first resume role that used it; round to the nearest whole year.
+  - Education -> "{exp.get('education_level', 'see resume')}". Expected result unknown -> "In progress".
+  - Questions about the applicant's own records that aren't in the profile (school grades, exam results,
+    references, salary history) and attestations the applicant must sign themselves ("I wrote this without
+    AI", "I certify that...") -> skip if optional. If required, stop and output
+    RESULT:FAILED:needs_applicant_answers, then list those questions. The applicant answers them by hand.
+
 Open-ended questions ("Why do you want this role?", "Tell us about yourself", "What interests you?") -> Write 2-3 sentences. Be specific to THIS job. Reference something from the job description. Connect it to a real achievement from the resume. No generic fluff. No "I am passionate about..." -- sound like a real person.
 {HUMAN_STYLE}
 
@@ -600,6 +612,13 @@ If something unexpected happens and these instructions don't cover it, figure it
 10. {submit_instruction}
 11. After submit: browser_snapshot. Run CAPTCHA DETECT -- submit buttons often trigger invisible CAPTCHAs. If found, solve it (the form will auto-submit once the token clears, or you may need to click Submit again). Then check for new tabs (browser_tabs action: "list"). Switch to newest, close old. Snapshot to confirm submission. Look for "thank you" or "application received".
 12. Output your result.
+
+== ANSWER LOG (print this right before the RESULT line, every time you filled any form) ==
+The applicant reads this before interviews, so log what you actually typed or selected.
+ANSWERS_JSON: [{{"q": "question as shown", "a": "what you entered", "stretch": false, "prep": ""}}, ...]
+Set "stretch": true for any answer that goes past what the resume shows (a "Yes" to a tool not on the resume,
+rounded-up years, "learning it now", a willingness you assumed). For those, "prep" = one or two plain sentences on
+how the applicant can back it up on a call (which real project to point to, what to learn first). One line, valid JSON.
 
 == RESULT CODES (output EXACTLY one) ==
 RESULT:APPLIED -- submitted successfully

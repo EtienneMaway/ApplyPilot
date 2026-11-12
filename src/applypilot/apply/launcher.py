@@ -218,15 +218,34 @@ def mark_result(url: str, status: str, error: str | None = None,
     conn.commit()
 
 
+def parse_answer_log(output: str) -> list[dict]:
+    """Pull the agent's ANSWERS_JSON line (last one wins) out of its output."""
+    found: list[dict] = []
+    for line in output.splitlines():
+        if "ANSWERS_JSON:" not in line:
+            continue
+        raw = line.split("ANSWERS_JSON:", 1)[1].strip().strip("`")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, list):
+            found = [d for d in data if isinstance(d, dict) and d.get("q")]
+    return found
+
+
 def _save_notes(url: str, output: str) -> None:
     """Keep the agent's closing explanation (why it stopped, what the form asked)."""
     # The final message is printed twice (assistant text + result event), each
     # ending in a RESULT: line. Take the last non-empty chunk between them.
     chunks = [c.strip() for c in re.split(r"\n?RESULT:[^\n]*", output) if c.strip()]
     notes = (chunks[-1] if chunks else output.strip())[-2000:]
+    answers = parse_answer_log(output)
     try:
         conn = get_connection()
         conn.execute("UPDATE jobs SET apply_notes = ? WHERE url = ?", (notes, url))
+        if answers:
+            conn.execute("UPDATE jobs SET submitted_answers = ? WHERE url = ?", (json.dumps(answers), url))
         conn.commit()
     except Exception as e:  # notes are nice to have; never break the apply loop
         logger.warning("Could not save apply notes: %s", e)
@@ -563,7 +582,7 @@ PERMANENT_FAILURES: set[str] = {
     "not_a_job_application", "unsafe_permissions",
     "unsafe_verification", "sso_required",
     "site_blocked", "cloudflare_blocked", "blocked_by_cloudflare",
-    "linkedin_easy_apply", "no_job_url",
+    "linkedin_easy_apply", "no_job_url", "needs_applicant_answers",
 }
 
 PERMANENT_PREFIXES: tuple[str, ...] = ("site_blocked", "cloudflare", "blocked_by")
