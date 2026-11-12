@@ -23,7 +23,7 @@ def _collect() -> dict:
     conn = get_connection()
     cols = ("url, application_url, title, company, site, company_country, location, fit_score, requirements, "
             "missing_skills, apply_status, apply_error, applied_at, last_attempted_at, apply_notes, manual_kit, "
-            "salary, discovered_at, submitted_answers")
+            "salary, discovered_at, submitted_answers, interview_prep")
     applied = [dict(r) for r in conn.execute(
         f"SELECT {cols} FROM jobs WHERE applied_at IS NOT NULL OR apply_status = 'applied' ORDER BY applied_at DESC")]
     scored = [dict(r) for r in conn.execute(
@@ -210,6 +210,15 @@ function prep(raw){
     st.map(x => `<div class="stretch"><div class="sub">${esc(x.q)}</div><b>You said:</b> ${esc(x.a)}<br><b>Back it up:</b> ${esc(x.prep)}</div>`).join('') +
     a.filter(x => !x.stretch).map(x => `<div class="ans"><div class="q">${esc(x.q)}</div>${esc(x.a)}</div>`).join('') + `</details>`;
 }
+function resumePrep(raw){
+  let p = null; try { p = JSON.parse(raw || 'null'); } catch {}
+  if (!p) return '';
+  const ch = p.resume_changes || [], qs = p.likely_questions || [];
+  return `<details><summary>Resume changes: <b>${ch.length}</b></summary>` +
+    (ch.length ? ch.map(c => `<div class="stretch"><b>Sent:</b> ${esc(c.sent)}<br><span class="sub">Your CV says: ${esc(c.original)}</span><br><b>On the call:</b> ${esc(c.how_to_talk_about_it)}</div>`).join('') : '<div class="sub">No changes in substance.</div>') +
+    `</details><details><summary>Likely questions: <b>${qs.length}</b></summary>` +
+    qs.map(q => `<div class="${q.gap ? 'stretch' : 'ans'}"><b>${esc(q.q)}</b><br>${esc(q.talking_point)}</div>`).join('') + `</details>`;
+}
 function jobsTable(){
   const which = document.getElementById('which').value, q = document.getElementById('q').value.toLowerCase();
   const rows = (which === 'applied' ? D.applied : D.scored).filter(j =>
@@ -225,7 +234,7 @@ function jobsTable(){
       <td class="fit ${fitCls(j.fit_score)}">${j.fit_score ?? ''}</td>
       <td><div class="tags">${split(j.requirements, ';').map(r => `<span class="tag">${esc(r)}</span>`).join('')}</div></td>
       <td><div class="tags">${split(j.missing_skills, ',').slice(0,6).map(r => `<span class="tag miss">${esc(r)}</span>`).join('')}</div></td>
-      <td style="min-width:240px">${prep(j.submitted_answers)}</td>
+      <td style="min-width:280px">${prep(j.submitted_answers)}${resumePrep(j.interview_prep)}</td>
       <td><span class="pill">${esc((j.apply_status || 'not tried').replace(/_/g,' '))}</span></td>
     </tr>`).join('') + `</tbody></table></div>`;
 }

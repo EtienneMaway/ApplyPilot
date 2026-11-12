@@ -259,7 +259,9 @@ def apply(
     try:
         from applypilot.board import generate_board
         from applypilot.manual import build_kits, write_signup_md
+        from applypilot.prep import build_all as build_prep
         build_kits()
+        build_prep()
         write_signup_md()
         console.print(f"Board updated: {generate_board()}")
     except Exception as e:  # never fail an apply run over the report
@@ -416,6 +418,14 @@ def content(min_score: int = typer.Option(4, "--min-score", help="Use jobs score
     from applypilot.content import generate_ideas
     n = generate_ideas(min_score=min_score)
     console.print(f"[green]{n} ideas saved.[/green] See them with: applypilot board")
+
+
+@app.command()
+def prep(rebuild: bool = typer.Option(False, "--rebuild")) -> None:
+    """Interview prep for applied jobs: resume changes to know and likely questions."""
+    _bootstrap()
+    from applypilot.prep import build_all
+    console.print(f"[green]{build_all(rebuild=rebuild)} prep note(s) built.[/green] See: applypilot board")
 
 
 @app.command()

@@ -203,6 +203,8 @@ _ALL_COLUMNS: dict[str, str] = {
     "manual_kit": "TEXT",
     # What the agent typed into the form (JSON list of {q, a, stretch, prep})
     "submitted_answers": "TEXT",
+    # Resume changes + likely interview questions (JSON), for applied jobs
+    "interview_prep": "TEXT",
 }
 
 
